@@ -1,0 +1,112 @@
+/**
+ * ハンバーガーメニュー: モバイル/タブレット常時 + PCスクロール時表示
+ *
+ * - モバイル/タブレット (≤1024px): 固定ヘッダーバー常時表示
+ * - PC (>1024px): ナビゲーションがスクロールで隠れたらヘッダーバーを表示、
+ *   最上部に戻りナビが見えたら非表示
+ */
+(function () {
+	'use strict';
+
+	document.addEventListener('DOMContentLoaded', function () {
+		var header = document.querySelector('.rcj-mobile-header');
+		var hamburger = document.querySelector('.rcj-hamburger');
+		var nav = document.querySelector('.rcj-mobile-nav');
+
+		if (!header || !hamburger || !nav) {
+			return;
+		}
+
+		var siteHeader = document.querySelector('.rcj-site-header') || document.querySelector('.rcj-front-hero__logo-row');
+
+		// --- メニュー開閉 ---
+		function setMenuOpen(open) {
+			hamburger.setAttribute('aria-expanded', open ? 'true' : 'false');
+			nav.classList.toggle('is-open', open);
+			document.body.classList.toggle('rcj-menu-open', open);
+
+			if (open) {
+				nav.querySelector('a')?.focus();
+			}
+		}
+
+		function isMenuOpen() {
+			return hamburger.getAttribute('aria-expanded') === 'true';
+		}
+
+		hamburger.addEventListener('click', function () {
+			setMenuOpen(!isMenuOpen());
+		});
+
+		document.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape' && isMenuOpen()) {
+				setMenuOpen(false);
+				hamburger.focus();
+			}
+		});
+
+		// メニュー内リンククリックで閉じる
+		nav.addEventListener('click', function (e) {
+			if (e.target.closest('a')) {
+				setMenuOpen(false);
+			}
+		});
+
+		// --- PC: スクロール検知でヘッダーバー表示切替 ---
+		var PC_BREAKPOINT = 1025;
+		var observer = null;
+
+		function isPC() {
+			return window.innerWidth >= PC_BREAKPOINT;
+		}
+
+		function setupScrollObserver() {
+			if (observer) {
+				observer.disconnect();
+				observer = null;
+			}
+
+			if (!siteHeader || !isPC()) {
+				// モバイル/タブレットではクラス不要（CSS で制御）
+				header.classList.remove('is-visible');
+				return;
+			}
+
+			observer = new IntersectionObserver(
+				function (entries) {
+					entries.forEach(function (entry) {
+						if (entry.isIntersecting) {
+							// サイトヘッダーが見えている → ハンバーガー非表示
+							header.classList.remove('is-visible');
+							// メニューが開いていたら閉じる
+							if (isMenuOpen()) {
+								setMenuOpen(false);
+							}
+						} else {
+							// サイトヘッダーが隠れた → ハンバーガー表示
+							header.classList.add('is-visible');
+						}
+					});
+				},
+				{ threshold: 0 }
+			);
+
+			observer.observe(siteHeader);
+		}
+
+		// 初期化 & リサイズ対応
+		var resizeTimer;
+		window.addEventListener('resize', function () {
+			clearTimeout(resizeTimer);
+			resizeTimer = setTimeout(function () {
+				setupScrollObserver();
+				// PC幅に戻ったらメニューを閉じる
+				if (isPC() && isMenuOpen()) {
+					setMenuOpen(false);
+				}
+			}, 150);
+		});
+
+		setupScrollObserver();
+	});
+})();

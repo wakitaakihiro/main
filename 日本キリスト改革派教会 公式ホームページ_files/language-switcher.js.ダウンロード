@@ -1,0 +1,61 @@
+/**
+ * Bogo 言語スイッチャー: トグル開閉・外クリック・Escape
+ */
+(function () {
+	'use strict';
+
+	document.addEventListener('DOMContentLoaded', function () {
+		var root = document.querySelector('[data-rcj-lang-switch]');
+		if (!root) {
+			return;
+		}
+
+		var btn = root.querySelector('.rcj-lang-switch__toggle');
+		var panel = root.querySelector('.rcj-lang-switch__panel');
+		if (!btn || !panel) {
+			return;
+		}
+
+		function setOpen(open) {
+			btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+			panel.hidden = !open;
+			root.classList.toggle('is-open', open);
+		}
+
+		function isOpen() {
+			return btn.getAttribute('aria-expanded') === 'true';
+		}
+
+		btn.addEventListener('click', function (e) {
+			e.stopPropagation();
+			setOpen(!isOpen());
+		});
+
+		document.addEventListener('click', function () {
+			if (isOpen()) {
+				setOpen(false);
+			}
+		});
+
+		root.addEventListener('click', function (e) {
+			e.stopPropagation();
+		});
+
+		document.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape' && isOpen()) {
+				setOpen(false);
+				btn.focus();
+			}
+		});
+
+		panel.addEventListener('click', function (e) {
+			if (e.target.closest('a.rcj-lang-switch__link')) {
+				setOpen(false);
+				return;
+			}
+			if (e.target.closest('.rcj-lang-switch__link.is-disabled')) {
+				setOpen(false);
+			}
+		});
+	});
+})();

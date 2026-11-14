@@ -1,0 +1,134 @@
+/**
+ * RCJ — Contact Form 7 ダイアログ
+ *
+ * CF7 のイベントを受け取り、.wpcf7-response-output の本文を
+ * <dialog> に表示する。
+ *
+ * 対応イベント:
+ *   wpcf7mailsent   → 送信成功
+ *   wpcf7invalid    → バリデーションエラー
+ *   wpcf7unaccepted → 同意未チェック
+ *   wpcf7mailfailed → 送信失敗
+ *   wpcf7spam       → スパム判定
+ *   wpcf7aborted    → 中断
+ */
+( function () {
+	'use strict';
+
+	// CF7 フォームが存在しないページでは何もしない
+	if ( ! document.querySelector( '.wpcf7' ) ) return;
+
+	// ── SVG アイコン ──────────────────────────────────────────────────────────
+
+	var SVG_CHECK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.25"/><path stroke-width="1.75" d="m8 12.5 2.5 2.5 5.5-6"/></svg>';
+	var SVG_ALERT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.25"/><path stroke-width="1.75" d="M12 8v5"/><circle cx="12" cy="15.5" r=".875" fill="currentColor" stroke="none"/></svg>';
+
+	// ── ダイアログを生成して <body> に追加 ───────────────────────────────────
+
+	var dialog = document.createElement( 'dialog' );
+	dialog.className = 'rcj-cf7-dialog';
+	dialog.setAttribute( 'aria-modal', 'true' );
+	dialog.innerHTML =
+		'<div class="rcj-cf7-dialog__inner">' +
+			'<div class="rcj-cf7-dialog__icon" aria-hidden="true"></div>' +
+			'<p class="rcj-cf7-dialog__message"></p>' +
+			'<button type="button" class="rcj-cf7-dialog__close">閉じる</button>' +
+		'</div>';
+	document.body.appendChild( dialog );
+
+	var iconEl    = dialog.querySelector( '.rcj-cf7-dialog__icon' );
+	var messageEl = dialog.querySelector( '.rcj-cf7-dialog__message' );
+	var closeBtn  = dialog.querySelector( '.rcj-cf7-dialog__close' );
+
+	// ── ダイアログを開く ──────────────────────────────────────────────────────
+
+	/**
+	 * @param {'success'|'error'} type
+	 * @param {string}            message  表示するテキスト
+	 */
+	function openDialog( type, message ) {
+		// 状態クラスをリセット
+		dialog.classList.remove( 'rcj-cf7-dialog--success', 'rcj-cf7-dialog--error' );
+		dialog.classList.add( 'rcj-cf7-dialog--' + type );
+
+		iconEl.innerHTML    = type === 'success' ? SVG_CHECK : SVG_ALERT;
+		messageEl.textContent = message;
+
+		if ( typeof dialog.showModal === 'function' ) {
+			dialog.showModal();
+		} else {
+			// <dialog> 非対応ブラウザのフォールバック
+			dialog.setAttribute( 'open', '' );
+		}
+	}
+
+	// ── ダイアログを閉じる ────────────────────────────────────────────────────
+
+	function closeDialog() {
+		if ( typeof dialog.close === 'function' ) {
+			dialog.close();
+		} else {
+			dialog.removeAttribute( 'open' );
+		}
+	}
+
+	// 閉じるボタン
+	closeBtn.addEventListener( 'click', closeDialog );
+
+	// バックドロップクリックでも閉じる
+	dialog.addEventListener( 'click', function ( e ) {
+		if ( e.target === dialog ) {
+			closeDialog();
+		}
+	} );
+
+	// Escape キーは <dialog> がネイティブに処理するため追加不要
+
+	// ── CF7 イベント受信 ──────────────────────────────────────────────────────
+
+	/**
+	 * フォーム要素に対応する .wpcf7-response-output のテキストを取得する。
+	 * CF7 は送信後に内容を書き込み aria-hidden を外す。
+	 *
+	 * @param  {Element} formEl  <form> 要素
+	 * @return {string}
+	 */
+	function getResponseText( formEl ) {
+		var output = formEl.querySelector( '.wpcf7-response-output' );
+		return output ? ( output.textContent || '' ).trim() : '';
+	}
+
+	// 成功
+	document.addEventListener( 'wpcf7mailsent', function ( e ) {
+		var msg = getResponseText( e.target );
+		openDialog( 'success', msg || 'ありがとうございます。メッセージは送信されました。' );
+	} );
+
+	// バリデーションエラー / 同意未チェック
+	document.addEventListener( 'wpcf7invalid', function ( e ) {
+		var msg = getResponseText( e.target );
+		openDialog( 'error', msg || '入力内容をご確認ください。' );
+	} );
+
+	document.addEventListener( 'wpcf7unaccepted', function ( e ) {
+		var msg = getResponseText( e.target );
+		openDialog( 'error', msg || '個人情報保護方針への同意が必要です。' );
+	} );
+
+	// 送信失敗 / スパム / 中断
+	document.addEventListener( 'wpcf7mailfailed', function ( e ) {
+		var msg = getResponseText( e.target );
+		openDialog( 'error', msg || '送信に失敗しました。しばらくしてから再度お試しください。' );
+	} );
+
+	document.addEventListener( 'wpcf7spam', function ( e ) {
+		var msg = getResponseText( e.target );
+		openDialog( 'error', msg || 'スパムと判定されました。内容をご確認ください。' );
+	} );
+
+	document.addEventListener( 'wpcf7aborted', function ( e ) {
+		var msg = getResponseText( e.target );
+		openDialog( 'error', msg || '送信が中断されました。' );
+	} );
+
+} )();
