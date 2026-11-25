@@ -1,0 +1,198 @@
+/**
+ * 言語通知バナー
+ *
+ * Case A: 初訪問 + 日本語ページ + 使用言語の翻訳あり → 翻訳ページへの誘導
+ * Case B: セッション内で使用言語ページを閲覧済み + 翻訳なし日本語ページ → 自動翻訳の案内
+ */
+(function () {
+	'use strict';
+
+	var data = window.rcjLangNotice;
+	if (!data) return;
+
+	var TEXTS = {
+		en: {
+			caseA: 'This page is available in English.',
+			caseACta: 'View in English',
+			caseB: "This page is only available in Japanese. Please use your browser's auto-translate feature.",
+			close: 'Close'
+		},
+		ko: {
+			caseA: '이 페이지를 한국어로 볼 수 있습니다.',
+			caseACta: '한국어로 보기',
+			caseB: '이 페이지는 일본어로만 제공됩니다. 브라우저의 자동 번역 기능을 이용해 주세요.',
+			close: '닫기'
+		}
+	};
+
+	var STORAGE_FIRST_SEEN = 'rcj_lang_first_seen';
+	var STORAGE_BROWSED    = 'rcj_lang_browsed';
+
+	function dismissKey(path) {
+		return 'rcj_lang_notice_dismissed_' + path;
+	}
+
+	function getLocal(key) {
+		try { return localStorage.getItem(key); } catch (e) { return null; }
+	}
+	function setLocal(key, val) {
+		try { localStorage.setItem(key, val); } catch (e) {}
+	}
+	function getSession(key) {
+		try { return sessionStorage.getItem(key); } catch (e) { return null; }
+	}
+	function setSession(key, val) {
+		try { sessionStorage.setItem(key, val); } catch (e) {}
+	}
+
+	function getQueryParam(name) {
+		var match = location.search.match(new RegExp('[?&]' + name + '=([^&]+)'));
+		return match ? decodeURIComponent(match[1]) : null;
+	}
+
+	function detectBrowserLang() {
+		var forced = getQueryParam('rcj_lang');
+		if (forced === 'en' || forced === 'ko') return forced;
+
+		var langs = navigator.languages && navigator.languages.length
+			? Array.prototype.slice.call(navigator.languages)
+			: [navigator.language || ''];
+		for (var i = 0; i < langs.length; i++) {
+			var l = (langs[i] || '').toLowerCase();
+			if (l === 'ko' || l.indexOf('ko-') === 0) return 'ko';
+			if (l === 'en' || l.indexOf('en-') === 0) return 'en';
+		}
+		return null;
+	}
+
+	function isJapaneseLocale(locale) {
+		return locale === 'ja' || locale === 'ja_JP';
+	}
+
+	function localeMatchesLang(locale, lang) {
+		if (!locale) return false;
+		var l = locale.toLowerCase();
+		if (lang === 'en') return l === 'en_us' || l.indexOf('en') === 0;
+		if (lang === 'ko') return l === 'ko_kr' || l.indexOf('ko') === 0;
+		return false;
+	}
+
+	function findTranslationForLang(lang, translations) {
+		for (var i = 0; i < translations.length; i++) {
+			var t = translations[i];
+			if (localeMatchesLang(t.locale, lang) && t.href) {
+				return t;
+			}
+		}
+		return null;
+	}
+
+	var CLOSE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+	function buildBanner(type, lang, translationHref) {
+		var t = TEXTS[lang] || TEXTS.en;
+
+		var el = document.createElement('div');
+		el.className = 'rcj-lang-notice rcj-lang-notice--' + type;
+		el.setAttribute('role', 'region');
+		el.setAttribute('aria-live', 'polite');
+
+		var inner = document.createElement('div');
+		inner.className = 'rcj-lang-notice__inner';
+
+		var msg = document.createElement('p');
+		msg.className = 'rcj-lang-notice__msg';
+		msg.textContent = type === 'caseA' ? t.caseA : t.caseB;
+		inner.appendChild(msg);
+
+		if (type === 'caseA' && translationHref) {
+			var cta = document.createElement('a');
+			cta.className = 'rcj-lang-notice__cta';
+			cta.href = translationHref;
+			cta.textContent = t.caseACta;
+			inner.appendChild(cta);
+		}
+
+		var closeBtn = document.createElement('button');
+		closeBtn.type = 'button';
+		closeBtn.className = 'rcj-lang-notice__close';
+		closeBtn.setAttribute('aria-label', t.close);
+		closeBtn.innerHTML = CLOSE_SVG;
+		inner.appendChild(closeBtn);
+
+		el.appendChild(inner);
+
+		closeBtn.addEventListener('click', function () {
+			hideBanner(el);
+			setSession(dismissKey(location.pathname), '1');
+		});
+
+		return el;
+	}
+
+	function showBanner(el) {
+		document.body.appendChild(el);
+		requestAnimationFrame(function () {
+			requestAnimationFrame(function () {
+				el.classList.add('is-visible');
+			});
+		});
+	}
+
+	function hideBanner(el) {
+		el.classList.remove('is-visible');
+		el.addEventListener('transitionend', function () {
+			if (el.parentNode) el.parentNode.removeChild(el);
+		}, { once: true });
+	}
+
+	document.addEventListener('DOMContentLoaded', function () {
+		var forceNotice = getQueryParam('rcj_notice'); // 'caseA' | 'caseB'
+		var browserLang = detectBrowserLang();
+		if (!browserLang) return;
+
+		// ?rcj_notice=caseB で Case B を強制表示（lang パラメータも必要）
+		if (forceNotice === 'caseB') {
+			showBanner(buildBanner('caseB', browserLang, null));
+			return;
+		}
+
+		var isDebug       = !!getQueryParam('rcj_lang');
+		var currentLocale = data.currentLocale || '';
+		var translations  = data.translations  || [];
+		var path          = location.pathname;
+
+		var isCurrentJP       = isJapaneseLocale(currentLocale);
+		var isCurrentUserLang = localeMatchesLang(currentLocale, browserLang);
+
+		if (isCurrentUserLang) {
+			if (!isDebug) {
+				setSession(STORAGE_BROWSED, '1');
+				if (!getLocal(STORAGE_FIRST_SEEN)) {
+					setLocal(STORAGE_FIRST_SEEN, '1');
+				}
+			}
+			return;
+		}
+
+		if (!isCurrentJP) return;
+
+		// デバッグ時は dismiss・初訪問チェックをスキップして強制表示
+		if (!isDebug && getSession(dismissKey(path))) return;
+
+		var translation = findTranslationForLang(browserLang, translations);
+
+		if (translation) {
+			// Case A: 初訪問 + 翻訳あり
+			if (isDebug || !getLocal(STORAGE_FIRST_SEEN)) {
+				if (!isDebug) setLocal(STORAGE_FIRST_SEEN, '1');
+				showBanner(buildBanner('caseA', browserLang, translation.href));
+			}
+		} else {
+			// Case B: セッション内で使用言語閲覧済み + 翻訳なし
+			if (isDebug || getSession(STORAGE_BROWSED)) {
+				showBanner(buildBanner('caseB', browserLang, null));
+			}
+		}
+	});
+})();
